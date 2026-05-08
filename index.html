@@ -553,6 +553,18 @@ input::placeholder { color: #ccc; }
 }
 .btn-import:hover { border-color: var(--black); color: var(--black); }
 
+.github-section { margin-top: 16px; padding-top: 20px; border-top: 1px solid var(--border); }
+.btn-github-upload {
+  background: #24292e; border-color: #24292e; color: #fff;
+}
+.btn-github-upload:hover { background: #000; border-color: #000; color: #fff; }
+.btn-github-download {
+  border-color: #24292e; color: #24292e;
+}
+.btn-github-download:hover { border-color: #000; color: #000; }
+.gh-token-note { font-size: 11px; color: var(--gray); margin-top: 6px; line-height: 1.4; }
+.gh-token-note code { background: #f0f0f0; padding: 1px 4px; border-radius: 3px; }
+
 /* IMPORT MODAL */
 .import-modal .modal-title { margin-bottom: 8px; }
 .import-hint {
@@ -1060,6 +1072,13 @@ textarea#import-data.invalid { border-color: #c0392b; }
       <button class="btn-export" onclick="exportData()">↑ Exportovat nastavení</button>
       <button class="btn-import" onclick="openImportModal()">↓ Importovat nastavení</button>
     </div>
+
+    <div class="github-section">
+      <div class="settings-section-title" style="margin-bottom:10px">GitHub synchronizace</div>
+      <div class="field-hint" style="margin-bottom:14px">Nahrajte nebo načtěte nastavení přímo z GitHub repozitáře.</div>
+      <button class="btn-export btn-github-upload" onclick="uploadToGithub()">↑ Nahrát do GitHub</button>
+      <button class="btn-import btn-github-download" onclick="downloadFromGithub()">↓ Načíst z GitHub</button>
+    </div>
   </div>
 </div>
 
@@ -1307,6 +1326,22 @@ textarea#import-data.invalid { border-color: #c0392b; }
     </div>
   </div>
 </div>
+<!-- GITHUB TOKEN MODAL -->
+<div class="modal-overlay import-modal" id="gh-modal">
+  <div class="modal" id="gh-modal-action">
+    <div class="modal-title">GitHub Personal Access Token</div>
+    <p class="import-hint">Pro nahrání nastavení je potřeba token s oprávněním <code>contents:write</code> (nebo <code>repo</code>). Token zůstává pouze v prohlížeči.</p>
+    <div class="field">
+      <input type="password" id="gh-token-input" placeholder="ghp_…" autocomplete="off" style="width:100%;box-sizing:border-box;padding:12px;border:1.5px solid var(--border);font-size:14px;font-family:'Barlow Condensed',sans-serif;">
+    </div>
+    <p class="gh-token-note">Vytvořte token na <code>github.com → Settings → Developer settings → Personal access tokens</code>.</p>
+    <div class="modal-actions">
+      <button class="btn-cancel" onclick="closeGithubModal()">Zrušit</button>
+      <button class="btn-save" onclick="confirmGithubAction()">Pokračovat</button>
+    </div>
+  </div>
+</div>
+
 <!-- EDIT MODAL -->
 <div class="modal-overlay" id="edit-modal">
   <div class="modal">
@@ -4180,6 +4215,11 @@ exports.qrToImageData = function qrToImageData (imgData, qr, opts) {
 
 const SKEY = 'kadrnka_settings_v3';
 const WKEY = 'kadrnka_wines_v1';
+const GHKEY = 'kadrnka_gh_token';
+const GH_OWNER = 'pavel-jandera';
+const GH_REPO  = 'Kadrnka-platba';
+const GH_FILE  = 'config.b64';
+const GH_BRANCH = 'main';
 
 const loadSettings = () => { try { return JSON.parse(localStorage.getItem(SKEY)) || {}; } catch { return {}; } };
 const saveSettings_ = d => localStorage.setItem(SKEY, JSON.stringify(d));
@@ -4558,6 +4598,81 @@ function importData() {
 document.getElementById('import-modal').addEventListener('click', function(e) {
   if (e.target === this) closeImportModal();
 });
+
+// ── GitHub sync ───────────────────────────────────
+function openGithubModal(action) {
+  const modal = document.getElementById('gh-modal-action');
+  modal.dataset.action = action;
+  document.getElementById('gh-token-input').value = localStorage.getItem(GHKEY) || '';
+  document.getElementById('gh-modal').classList.add('open');
+  setTimeout(() => document.getElementById('gh-token-input').focus(), 50);
+}
+function closeGithubModal() {
+  document.getElementById('gh-modal').classList.remove('open');
+}
+document.getElementById('gh-modal').addEventListener('click', function(e) {
+  if (e.target === this) closeGithubModal();
+});
+
+async function confirmGithubAction() {
+  const token = document.getElementById('gh-token-input').value.trim();
+  if (!token) { showToast('Zadejte GitHub token'); return; }
+  localStorage.setItem(GHKEY, token);
+  const action = document.getElementById('gh-modal-action').dataset.action;
+  closeGithubModal();
+  if (action === 'upload') await doUploadToGithub(token);
+}
+
+function uploadToGithub() {
+  const token = localStorage.getItem(GHKEY);
+  if (!token) { openGithubModal('upload'); return; }
+  doUploadToGithub(token);
+}
+
+async function doUploadToGithub(token) {
+  const payload = { settings: loadSettings(), wines: loadWines(), v: 1 };
+  const encoded = btoa(unescape(encodeURIComponent(JSON.stringify(payload))));
+  const apiBase = `https://api.github.com/repos/${GH_OWNER}/${GH_REPO}/contents/${GH_FILE}`;
+  const headers = {
+    'Authorization': `token ${token}`,
+    'Accept': 'application/vnd.github.v3+json',
+    'Content-Type': 'application/json'
+  };
+  try {
+    let sha;
+    const getResp = await fetch(`${apiBase}?ref=${GH_BRANCH}`, { headers });
+    if (getResp.ok) { sha = (await getResp.json()).sha; }
+    else if (getResp.status !== 404) { throw new Error(`GitHub API: ${getResp.status}`); }
+
+    const body = { message: 'Aktualizace konfigurace', content: btoa(encoded), branch: GH_BRANCH };
+    if (sha) body.sha = sha;
+
+    const putResp = await fetch(apiBase, { method: 'PUT', headers, body: JSON.stringify(body) });
+    if (!putResp.ok) { const e = await putResp.json(); throw new Error(e.message || putResp.status); }
+    showToast('Nastavení nahráno do GitHub ✓');
+  } catch(e) {
+    showToast('Chyba: ' + (e.message || e));
+    openGithubModal('upload');
+  }
+}
+
+async function downloadFromGithub() {
+  try {
+    const resp = await fetch(`https://raw.githubusercontent.com/${GH_OWNER}/${GH_REPO}/${GH_BRANCH}/${GH_FILE}?t=${Date.now()}`);
+    if (!resp.ok) throw new Error('Konfigurace v repozitáři nenalezena');
+    const raw = (await resp.text()).trim();
+    if (!raw) throw new Error('Soubor konfigurace je prázdný');
+    const decoded = JSON.parse(decodeURIComponent(escape(atob(raw))));
+    if (!decoded.v || !decoded.settings) throw new Error('Neplatný formát');
+    if (decoded.settings) localStorage.setItem(SKEY, JSON.stringify(decoded.settings));
+    if (decoded.wines)    localStorage.setItem(WKEY, JSON.stringify(decoded.wines));
+    quantities = {};
+    showToast('Nastavení načteno z GitHub ✓');
+    setTimeout(showMain, 600);
+  } catch(e) {
+    showToast('Chyba: ' + (e.message || e));
+  }
+}
 
 // ── CSV Import ────────────────────────────────────
 function importCSV(event) {
