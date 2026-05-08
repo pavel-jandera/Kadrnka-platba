@@ -1074,10 +1074,10 @@ textarea#import-data.invalid { border-color: #c0392b; }
     </div>
 
     <div class="github-section">
-      <div class="settings-section-title" style="margin-bottom:10px">GitHub synchronizace</div>
-      <div class="field-hint" style="margin-bottom:14px">Nahrajte nebo načtěte nastavení přímo z GitHub repozitáře.</div>
-      <button class="btn-export btn-github-upload" onclick="uploadToGithub()">↑ Nahrát do GitHub</button>
-      <button class="btn-import btn-github-download" onclick="downloadFromGithub()">↓ Načíst z GitHub</button>
+      <div class="settings-section-title" style="margin-bottom:10px">Výchozí nastavení</div>
+      <div class="field-hint" style="margin-bottom:14px">Načtěte sdílené nastavení uložené v repozitáři (nevyžaduje přihlášení). Pro uložení nového nastavení do repozitáře použijte tlačítko nahrát.</div>
+      <button class="btn-export btn-github-upload" onclick="uploadToGithub()">↑ Nahrát do repozitáře</button>
+      <button class="btn-import btn-github-download" onclick="downloadFromGithub()">↓ Načíst výchozí nastavení</button>
     </div>
   </div>
 </div>
@@ -4658,16 +4658,20 @@ async function doUploadToGithub(token) {
 
 async function downloadFromGithub() {
   try {
-    const resp = await fetch(`https://raw.githubusercontent.com/${GH_OWNER}/${GH_REPO}/${GH_BRANCH}/${GH_FILE}?t=${Date.now()}`);
+    const ts = Date.now();
+    let resp = await fetch(`./config.b64?t=${ts}`);
+    if (!resp.ok) {
+      resp = await fetch(`https://raw.githubusercontent.com/${GH_OWNER}/${GH_REPO}/${GH_BRANCH}/${GH_FILE}?t=${ts}`);
+    }
     if (!resp.ok) throw new Error('Konfigurace v repozitáři nenalezena');
     const raw = (await resp.text()).trim();
-    if (!raw) throw new Error('Soubor konfigurace je prázdný');
+    if (!raw) throw new Error('Výchozí nastavení zatím nebylo nahráno do repozitáře');
     const decoded = JSON.parse(decodeURIComponent(escape(atob(raw))));
     if (!decoded.v || !decoded.settings) throw new Error('Neplatný formát');
     if (decoded.settings) localStorage.setItem(SKEY, JSON.stringify(decoded.settings));
     if (decoded.wines)    localStorage.setItem(WKEY, JSON.stringify(decoded.wines));
     quantities = {};
-    showToast('Nastavení načteno z GitHub ✓');
+    showToast('Nastavení načteno ✓');
     setTimeout(showMain, 600);
   } catch(e) {
     showToast('Chyba: ' + (e.message || e));
