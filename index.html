@@ -138,6 +138,25 @@ html, body {
 }
 .total-value span { font-size: 16px; color: var(--gray); margin-left: 4px; }
 
+/* COUPON BAR */
+.coupon-bar {
+  width: 100%; max-width: 400px;
+  display: flex; align-items: center; justify-content: space-between;
+  padding: 0 0 20px;
+}
+.coupon-label-wrap { display: flex; flex-direction: column; }
+.coupon-hint {
+  font-family: 'Barlow Condensed', sans-serif;
+  font-size: 10px; letter-spacing: 1.5px; text-transform: uppercase;
+  color: var(--gray); margin-top: 3px;
+}
+.coupon-controls { display: flex; align-items: center; gap: 8px; }
+.coupon-discount {
+  font-family: 'Barlow Condensed', sans-serif;
+  font-weight: 900; font-size: 18px; letter-spacing: -0.5px;
+  color: #a33; min-width: 72px; text-align: right;
+}
+
 /* AMOUNT BLOCK */
 .amount-block {
   width: 100%; max-width: 400px; text-align: center;
@@ -781,6 +800,20 @@ textarea#import-data.invalid { border-color: #c0392b; }
     <div class="total-bar" id="total-bar" style="display:none">
       <span class="total-label">Celkem</span>
       <span class="total-value" id="total-display">0 <span>Kč</span></span>
+    </div>
+
+    <!-- COUPONS -->
+    <div class="coupon-bar" id="coupon-bar" style="display:none">
+      <div class="coupon-label-wrap">
+        <span class="total-label">Kupony</span>
+        <span class="coupon-hint">150 Kč / ks</span>
+      </div>
+      <div class="coupon-controls">
+        <button class="qty-btn" onclick="changeCoupon(-1)">−</button>
+        <span class="qty-value" id="coupon-count">0</span>
+        <button class="qty-btn" onclick="changeCoupon(1)">+</button>
+        <span class="coupon-discount" id="coupon-discount"></span>
+      </div>
     </div>
 
     <!-- AMOUNT -->
@@ -4228,6 +4261,8 @@ const saveWines = d => localStorage.setItem(WKEY, JSON.stringify(d));
 
 // quantities in-memory keyed by wine index
 let quantities = {};
+let coupons = 0;
+const COUPON_VALUE = 150;
 
 // ── Navigation ────────────────────────────────────
 function showView(id) {
@@ -4281,11 +4316,13 @@ function renderWineList() {
     empty.style.display = 'block';
     container.innerHTML = '';
     totalBar.style.display = 'none';
+    document.getElementById('coupon-bar').style.display = 'none';
     return;
   }
 
   empty.style.display = 'none';
   totalBar.style.display = 'flex';
+  document.getElementById('coupon-bar').style.display = 'flex';
 
   // init quantities for new wines
   wines.forEach((w, i) => { if (quantities[i] === undefined) quantities[i] = 0; });
@@ -4320,6 +4357,16 @@ function changeQty(i, delta) {
   updateTotal();
 }
 
+function changeCoupon(delta) {
+  coupons = Math.max(0, coupons + delta);
+  const countEl = document.getElementById('coupon-count');
+  const discEl  = document.getElementById('coupon-discount');
+  countEl.textContent = coupons;
+  countEl.className = 'qty-value' + (coupons > 0 ? ' active' : '');
+  discEl.textContent = coupons > 0 ? '−' + (coupons * COUPON_VALUE).toLocaleString('cs-CZ') + ' Kč' : '';
+  updateTotal();
+}
+
 function updateTotal() {
   const wines = loadWines();
   let total = 0;
@@ -4328,10 +4375,9 @@ function updateTotal() {
   document.getElementById('total-display').innerHTML =
     total.toLocaleString('cs-CZ') + ' <span>Kč</span>';
 
-  // prefill amount field
   const amountEl = document.getElementById('main-amount');
   if (total > 0) {
-    amountEl.value = total;
+    amountEl.value = Math.max(0, total - coupons * COUPON_VALUE);
   } else {
     amountEl.value = '';
   }
@@ -4383,7 +4429,7 @@ function deleteWine(i) {
   wines.splice(i, 1);
   saveWines(wines);
   // reset quantities
-  quantities = {};
+  quantities = {}; coupons = 0;
   renderWineMgmt();
   showToast('Víno odstraněno');
 }
@@ -4523,7 +4569,10 @@ function escHtml(s) {
 // ── New Order ─────────────────────────────────────
 function newOrder() {
   // Reset quantities
-  quantities = {};
+  quantities = {}; coupons = 0;
+  document.getElementById('coupon-count').textContent = '0';
+  document.getElementById('coupon-count').className = 'qty-value';
+  document.getElementById('coupon-discount').textContent = '';
   // Reset amount field
   document.getElementById('main-amount').value = '';
   // Hide QR and new-order button, show generate button
@@ -4586,7 +4635,7 @@ function importData() {
 
     ta.classList.remove('invalid');
     closeImportModal();
-    quantities = {};
+    quantities = {}; coupons = 0;
     showToast('Nastavení importováno ✓');
     setTimeout(showMain, 600);
   } catch(e) {
@@ -4670,7 +4719,7 @@ async function downloadFromGithub() {
     if (!decoded.v || !decoded.settings) throw new Error('Neplatný formát');
     if (decoded.settings) localStorage.setItem(SKEY, JSON.stringify(decoded.settings));
     if (decoded.wines)    localStorage.setItem(WKEY, JSON.stringify(decoded.wines));
-    quantities = {};
+    quantities = {}; coupons = 0;
     showToast('Nastavení načteno ✓');
     setTimeout(showMain, 600);
   } catch(e) {
@@ -4719,7 +4768,7 @@ function importCSV(event) {
       if (wines.length === 0) throw new Error('Žádná platná vína nebyla nalezena');
 
       saveWines(wines);
-      quantities = {};
+      quantities = {}; coupons = 0;
       renderWineMgmt();
 
       resultEl.className = 'csv-result ok';
@@ -4767,7 +4816,7 @@ function saveEditWine() {
   const wines = loadWines();
   wines[editIndex] = { name, price };
   saveWines(wines);
-  quantities = {};
+  quantities = {}; coupons = 0;
   closeEditModal();
   renderWineMgmt();
   showToast('Víno upraveno');
