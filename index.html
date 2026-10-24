@@ -362,6 +362,13 @@ input::placeholder { color: #ccc; }
   color: var(--gray); font-size: 16px; padding: 4px; transition: color .15s;
 }
 .btn-edit:hover { color: var(--gold); }
+.btn-move {
+  background: none; border: none; cursor: pointer;
+  color: var(--border); font-size: 14px; padding: 4px 2px; transition: color .15s;
+  line-height: 1;
+}
+.btn-move:hover { color: var(--black); }
+.btn-move:disabled { opacity: 0.2; cursor: default; }
 
 /* EDIT MODAL */
 .modal-overlay {
@@ -4402,6 +4409,8 @@ function renderWineMgmt() {
         <div class="wine-mgmt-name">${escHtml(w.name)}</div>
         <div class="wine-mgmt-price">${w.price} Kč / láhev</div>
       </div>
+      <button class="btn-move" onclick="moveWine(${i}, -1)" title="Posunout nahoru" ${i === 0 ? 'disabled' : ''}>▲</button>
+      <button class="btn-move" onclick="moveWine(${i}, 1)"  title="Posunout dolů"  ${i === wines.length - 1 ? 'disabled' : ''}>▼</button>
       <button class="btn-edit" onclick="editWine(${i})" title="Upravit">✎</button>
       <button class="btn-delete" onclick="deleteWine(${i})" title="Smazat">✕</button>
     </div>
@@ -4433,6 +4442,16 @@ function deleteWine(i) {
   quantities = {}; coupons = 0;
   renderWineMgmt();
   showToast('Víno odstraněno');
+}
+
+function moveWine(i, dir) {
+  const wines = loadWines();
+  const j = i + dir;
+  if (j < 0 || j >= wines.length) return;
+  [wines[i], wines[j]] = [wines[j], wines[i]];
+  saveWines(wines);
+  quantities = {}; coupons = 0;
+  renderWineMgmt();
 }
 
 // ── Settings ──────────────────────────────────────
