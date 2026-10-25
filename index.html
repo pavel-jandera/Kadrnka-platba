@@ -603,24 +603,14 @@ input::placeholder { color: #ccc; }
 .gh-token-note { font-size: 11px; color: var(--gray); margin-top: 6px; line-height: 1.4; }
 .gh-token-note code { background: #f0f0f0; padding: 1px 4px; border-radius: 3px; }
 
-/* IMPORT MODAL */
-.import-modal .modal-title { margin-bottom: 8px; }
-.import-hint {
-  font-size: 12px; color: var(--gray); margin-bottom: 14px; line-height: 1.5;
+/* SHARE MODAL */
+.share-qr { display: flex; justify-content: center; margin: 16px 0 12px; }
+.share-qr canvas, .share-qr img { border: 1px solid var(--border); }
+.share-url-preview {
+  font-family: monospace; font-size: 11px; color: var(--gray);
+  word-break: break-all; text-align: center; margin-bottom: 14px;
+  line-height: 1.5;
 }
-textarea#import-data {
-  width: 100%;
-  height: 120px;
-  border: 1.5px solid var(--border);
-  border-radius: 0;
-  padding: 10px 12px;
-  font-family: 'Barlow', monospace;
-  font-size: 12px; color: var(--black);
-  outline: none; resize: none;
-  transition: border-color .15s;
-}
-textarea#import-data:focus { border-color: var(--black); }
-textarea#import-data.invalid { border-color: #c0392b; }
 </style>
 </head>
 <body>
@@ -1119,10 +1109,9 @@ textarea#import-data.invalid { border-color: #c0392b; }
     <div class="save-ok" id="save-ok">✓ Nastavení uloženo</div>
 
     <div class="export-section">
-      <div class="settings-section-title" style="margin-bottom:14px">Přenos nastavení</div>
-      <div class="field-hint" style="margin-bottom:14px">Exportujte nastavení (účet + vína) jako kód a importujte ho na jiném zařízení.</div>
-      <button class="btn-export" onclick="exportData()">↑ Exportovat nastavení</button>
-      <button class="btn-import" onclick="openImportModal()">↓ Importovat nastavení</button>
+      <div class="settings-section-title" style="margin-bottom:14px">Sdílet nastavení</div>
+      <div class="field-hint" style="margin-bottom:14px">Vygenerujte odkaz nebo QR kód a nasdílejte ho na jiné zařízení. Stačí odkaz otevřít.</div>
+      <button class="btn-export" onclick="openShareModal()">↗ Sdílet nastavení</button>
     </div>
 
     <div class="github-section">
@@ -1366,15 +1355,27 @@ textarea#import-data.invalid { border-color: #c0392b; }
 
 
 
-<!-- IMPORT MODAL -->
-<div class="modal-overlay import-modal" id="import-modal">
+<!-- SHARE MODAL -->
+<div class="modal-overlay" id="share-modal">
+  <div class="modal">
+    <div class="modal-title">Sdílet nastavení</div>
+    <div class="share-qr" id="share-qr"></div>
+    <p class="share-url-preview" id="share-url-preview"></p>
+    <div class="modal-actions">
+      <button class="btn-cancel" onclick="closeShareModal()">Zavřít</button>
+      <button class="btn-save" onclick="copyShareUrl()">↗ Zkopírovat odkaz</button>
+    </div>
+  </div>
+</div>
+
+<!-- HASH IMPORT MODAL -->
+<div class="modal-overlay" id="hash-import-modal">
   <div class="modal">
     <div class="modal-title">Importovat nastavení</div>
-    <p class="import-hint">Vložte exportovaný kód ze zdrojového zařízení. <strong>Pozor: stávající nastavení bude přepsáno.</strong></p>
-    <textarea id="import-data" placeholder="Vložte exportovaný kód…"></textarea>
+    <p style="font-size:13px;color:var(--gray);margin-bottom:16px;line-height:1.5">Odkaz obsahuje nastavení. Chcete přepsat stávající nastavení?</p>
     <div class="modal-actions">
-      <button class="btn-cancel" onclick="closeImportModal()">Zrušit</button>
-      <button class="btn-save" onclick="importData()">Importovat</button>
+      <button class="btn-cancel" onclick="declineHashImport()">Zrušit</button>
+      <button class="btn-save" onclick="confirmHashImport()">Importovat</button>
     </div>
   </div>
 </div>
@@ -4636,58 +4637,72 @@ function onAmountChange() {
 }
 
 // ── Export / Import ───────────────────────────────
-function exportData() {
-  const payload = {
-    settings: loadSettings(),
-    wines: loadWines(),
-    v: 1
-  };
+// ── Share via URL hash ────────────────────────────
+let _shareUrl = '';
+
+function buildShareUrl() {
+  const payload = { settings: loadSettings(), wines: loadWines(), v: 1 };
   const encoded = btoa(unescape(encodeURIComponent(JSON.stringify(payload))));
-
-  // Copy to clipboard and show
-  navigator.clipboard.writeText(encoded).then(() => {
-    showToast('Kód zkopírován do schránky');
-  }).catch(() => {
-    // fallback — show in prompt
-    prompt('Zkopírujte tento kód:', encoded);
-  });
+  return location.origin + location.pathname + '#' + encoded;
 }
 
-function openImportModal() {
-  document.getElementById('import-data').value = '';
-  document.getElementById('import-data').classList.remove('invalid');
-  document.getElementById('import-modal').classList.add('open');
-  setTimeout(() => document.getElementById('import-data').focus(), 50);
+function openShareModal() {
+  _shareUrl = buildShareUrl();
+  const qrDiv = document.getElementById('share-qr');
+  qrDiv.innerHTML = '';
+  const canvas = document.createElement('canvas');
+  qrDiv.appendChild(canvas);
+  QRCode.toCanvas(canvas, _shareUrl, { width: 200, margin: 1, errorCorrectionLevel: 'L' });
+  const preview = _shareUrl.length > 80 ? _shareUrl.slice(0, 80) + '…' : _shareUrl;
+  document.getElementById('share-url-preview').textContent = preview;
+  document.getElementById('share-modal').classList.add('open');
 }
 
-function closeImportModal() {
-  document.getElementById('import-modal').classList.remove('open');
+function closeShareModal() {
+  document.getElementById('share-modal').classList.remove('open');
 }
-
-function importData() {
-  const raw = document.getElementById('import-data').value.trim();
-  const ta = document.getElementById('import-data');
-  try {
-    const decoded = JSON.parse(decodeURIComponent(escape(atob(raw))));
-    if (!decoded.v || !decoded.settings) throw new Error('invalid');
-
-    if (decoded.settings) localStorage.setItem(SKEY, JSON.stringify(decoded.settings));
-    if (decoded.wines)    localStorage.setItem(WKEY, JSON.stringify(decoded.wines));
-
-    ta.classList.remove('invalid');
-    closeImportModal();
-    quantities = {}; coupons = 0;
-    showToast('Nastavení importováno ✓');
-    setTimeout(showMain, 600);
-  } catch(e) {
-    ta.classList.add('invalid');
-    showToast('Neplatný kód — zkuste znovu');
-  }
-}
-
-document.getElementById('import-modal').addEventListener('click', function(e) {
-  if (e.target === this) closeImportModal();
+document.getElementById('share-modal').addEventListener('click', function(e) {
+  if (e.target === this) closeShareModal();
 });
+
+function copyShareUrl() {
+  navigator.clipboard.writeText(_shareUrl).then(() => {
+    showToast('Odkaz zkopírován ✓');
+    closeShareModal();
+  }).catch(() => { prompt('Zkopírujte odkaz:', _shareUrl); });
+}
+
+// ── Import from URL hash on load ──────────────────
+let _pendingHashData = null;
+
+function checkUrlHash() {
+  const hash = location.hash.slice(1);
+  if (!hash) return;
+  try {
+    const decoded = JSON.parse(decodeURIComponent(escape(atob(hash))));
+    if (!decoded.v || !decoded.settings) return;
+    _pendingHashData = decoded;
+    document.getElementById('hash-import-modal').classList.add('open');
+  } catch(e) { /* invalid hash, ignore */ }
+}
+
+function confirmHashImport() {
+  if (!_pendingHashData) return;
+  if (_pendingHashData.settings) localStorage.setItem(SKEY, JSON.stringify(_pendingHashData.settings));
+  if (_pendingHashData.wines)    localStorage.setItem(WKEY, JSON.stringify(_pendingHashData.wines));
+  _pendingHashData = null;
+  history.replaceState(null, '', location.pathname);
+  document.getElementById('hash-import-modal').classList.remove('open');
+  quantities = {}; coupons = 0;
+  showToast('Nastavení importováno ✓');
+  setTimeout(showMain, 600);
+}
+
+function declineHashImport() {
+  _pendingHashData = null;
+  history.replaceState(null, '', location.pathname);
+  document.getElementById('hash-import-modal').classList.remove('open');
+}
 
 // ── GitHub sync ───────────────────────────────────
 function openGithubModal(action) {
@@ -4880,6 +4895,7 @@ document.getElementById('w-price').addEventListener('keydown', e => {
 
 // Init
 showMain();
+checkUrlHash();
 </script>
 </body>
 </html>
