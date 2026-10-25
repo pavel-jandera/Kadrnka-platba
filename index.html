@@ -343,9 +343,12 @@ input::placeholder { color: #ccc; }
 .wine-mgmt-row {
   display: flex; align-items: center; gap: 10px;
   padding: 12px 0; border-bottom: 1px solid var(--border);
+  transition: opacity .15s;
 }
 .wine-mgmt-row:first-child { border-top: 2px solid var(--black); }
 .wine-mgmt-row:last-child { border-bottom: 2px solid var(--black); }
+.wine-mgmt-row.wine-hidden { opacity: 0.38; }
+.wine-mgmt-row.wine-hidden .wine-mgmt-name { text-decoration: line-through; }
 .wine-mgmt-info { flex: 1; }
 .wine-mgmt-name { font-weight: 600; font-size: 14px; color: var(--black); }
 .wine-mgmt-price {
@@ -369,6 +372,14 @@ input::placeholder { color: #ccc; }
 }
 .btn-move:hover { color: var(--black); }
 .btn-move:disabled { opacity: 0.2; cursor: default; }
+.btn-visibility {
+  background: none; border: none; cursor: pointer;
+  font-size: 15px; padding: 4px 2px; line-height: 1;
+  transition: color .15s;
+  color: var(--gold);
+}
+.btn-visibility.is-hidden { color: var(--border); }
+.btn-visibility:hover { opacity: 0.7; }
 
 /* EDIT MODAL */
 .modal-overlay {
@@ -4319,8 +4330,9 @@ function renderWineList() {
   const container = document.getElementById('wine-rows');
   const empty = document.getElementById('wine-list-empty');
   const totalBar = document.getElementById('total-bar');
+  const visibleWines = wines.filter(w => !w.hidden);
 
-  if (wines.length === 0) {
+  if (visibleWines.length === 0) {
     empty.style.display = 'block';
     container.innerHTML = '';
     totalBar.style.display = 'none';
@@ -4335,7 +4347,7 @@ function renderWineList() {
   // init quantities for new wines
   wines.forEach((w, i) => { if (quantities[i] === undefined) quantities[i] = 0; });
 
-  container.innerHTML = wines.map((w, i) => `
+  container.innerHTML = wines.map((w, i) => w.hidden ? '' : `
     <div class="wine-row">
       <div class="wine-info">
         <div class="wine-name">${escHtml(w.name)}</div>
@@ -4404,11 +4416,12 @@ function renderWineMgmt() {
   }
   empty.style.display = 'none';
   list.innerHTML = wines.map((w, i) => `
-    <div class="wine-mgmt-row">
+    <div class="wine-mgmt-row${w.hidden ? ' wine-hidden' : ''}">
       <div class="wine-mgmt-info">
         <div class="wine-mgmt-name">${escHtml(w.name)}</div>
         <div class="wine-mgmt-price">${w.price} Kč / láhev</div>
       </div>
+      <button class="btn-visibility${w.hidden ? ' is-hidden' : ''}" onclick="toggleWineHidden(${i})" title="${w.hidden ? 'Zobrazit' : 'Skrýt'}">●</button>
       <button class="btn-move" onclick="moveWine(${i}, -1)" title="Posunout nahoru" ${i === 0 ? 'disabled' : ''}>▲</button>
       <button class="btn-move" onclick="moveWine(${i}, 1)"  title="Posunout dolů"  ${i === wines.length - 1 ? 'disabled' : ''}>▼</button>
       <button class="btn-edit" onclick="editWine(${i})" title="Upravit">✎</button>
@@ -4451,6 +4464,14 @@ function moveWine(i, dir) {
   [wines[i], wines[j]] = [wines[j], wines[i]];
   saveWines(wines);
   quantities = {}; coupons = 0;
+  renderWineMgmt();
+}
+
+function toggleWineHidden(i) {
+  const wines = loadWines();
+  wines[i].hidden = !wines[i].hidden;
+  if (wines[i].hidden) { quantities[i] = 0; coupons = 0; }
+  saveWines(wines);
   renderWineMgmt();
 }
 
